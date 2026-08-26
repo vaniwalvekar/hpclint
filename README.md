@@ -1,6 +1,6 @@
 # hpclint
 
-**The missing pre-check for HPC jobs — and the first piece of a complete Slurm job assistant.**
+***The missing pre-check for HPC jobs — and the first piece of a complete Slurm job assistant.***
 
 Every HPC user has felt this: you write a job script, submit it, wait in
 queue for twenty minutes, and watch it die in the first second because you
