@@ -9,6 +9,7 @@ Usage:
 
 import re
 import sys
+import os
 import argparse
 
 try:
@@ -16,6 +17,35 @@ try:
 except ImportError:
     print("Missing dependency: PyYAML. Install with: pip install pyyaml")
     sys.exit(2)
+
+
+# Patterns for common ways a script references another file it depends on.
+# This is deliberately heuristic, not a full shell parser — it catches the
+# common cases (interpreter + script, common input flags, ./relative exec)
+# and skips anything with a shell variable ($HOME, $SCRATCH, $SLURM_*, etc.)
+# since we can't know its value without actually running the job.
+_FILE_REFERENCE_PATTERNS = [
+    r"\b(?:python3?|Rscript|perl|bash|sh)\s+([^\s$][^\s]*\.(?:py|R|pl|sh|jl|m))",
+    r"--(?:input|in|infile|script)[= ]([^\s$][^\s]*)",
+    r"(?<!\S)\.\/([^\s$][^\s]*)",
+]
+
+
+def find_referenced_files(content, script_dir):
+    """Return a list of (reference_text, resolved_path) for files the script
+    references that don't actually exist on disk. Best-effort only."""
+    missing = []
+    seen = set()
+    for pattern in _FILE_REFERENCE_PATTERNS:
+        for match in re.finditer(pattern, content):
+            ref = match.group(1)
+            if ref in seen:
+                continue
+            seen.add(ref)
+            resolved = ref if os.path.isabs(ref) else os.path.join(script_dir, ref)
+            if not os.path.exists(resolved):
+                missing.append((ref, resolved))
+    return missing
 
 
 def read_script(path):
@@ -175,6 +205,14 @@ def check_script(script_path, config):
                 f"Script references a slow storage path. Consider using {rule.get('recommend', 'a faster filesystem')} "
                 f"for data-intensive read/write instead."
             )
+
+    # --- Referenced file existence (best-effort; skips anything using a shell variable) ---
+    script_dir = os.path.dirname(os.path.abspath(script_path))
+    for ref, resolved in find_referenced_files(content, script_dir):
+        issues.append(
+            f"Script references '{ref}', but no file was found at '{resolved}'. "
+            f"Double-check the path before submitting — this job will fail immediately if it's missing."
+        )
 
     return params_checked, issues
 
