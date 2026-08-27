@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-hpc_preflight — check a Slurm job script against a cluster's real hardware
+hpclint — check a Slurm job script against a cluster's real hardware
 limits and submission rules, before you submit it.
 
 Usage:
-    python3 hpc_preflight.py <path_to_slurm_script> --config <path_to_cluster_config.yaml>
+    python3 hpclint.py <path_to_slurm_script> --config <path_to_cluster_config.yaml>
 """
 
 import re
