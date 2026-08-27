@@ -133,6 +133,25 @@ def check_script(script_path, config):
         issues.append("No --cpus-per-task set (the scheduler will default to 1, which may waste your time budget).")
     # If it's an MPI job, absence of --cpus-per-task is expected (parallelism comes from --ntasks instead).
 
+    # --- Total cores per node overflow check (ntasks-per-node x cpus-per-task) ---
+    # Each piece can look fine alone; only the combination reveals it won't fit on one node.
+    tasks_per_node = None
+    if ntasks_per_node:
+        tasks_per_node = int(ntasks_per_node)
+    elif ntasks and nodes:
+        # ntasks is a total across all nodes; estimate the per-node share.
+        tasks_per_node = -(-int(ntasks) // int(nodes))  # ceiling division
+
+    if tasks_per_node and cpus_max is not None:
+        cpus_per_task_int = int(cpus) if cpus else 1  # Slurm defaults --cpus-per-task to 1 if unset
+        total_cores_per_node = tasks_per_node * cpus_per_task_int
+        if total_cores_per_node > cpus_max:
+            issues.append(
+                f"{tasks_per_node} tasks/node x {cpus_per_task_int} cpus-per-task = {total_cores_per_node} "
+                f"cores per node, but '{effective_partition}' nodes only have {cpus_max} threads. "
+                f"Lower --ntasks-per-node or --cpus-per-task."
+            )
+
     mem_max = partition_spec.get("mem_gb_max")
     if mem:
         mem_gb = parse_mem_to_gb(mem)
