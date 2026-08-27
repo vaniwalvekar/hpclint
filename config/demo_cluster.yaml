@@ -1,0 +1,23 @@
+cluster_name: "Fictional University Cluster (demo)"
+
+partitions:
+  standard:
+    is_default: true
+    has_gpu: false
+    cpus_per_task_max: 128
+    mem_gb_max: 512
+
+  accel:
+    is_default: false
+    has_gpu: true
+    gpu_max: 8
+    cpus_per_task_max: 96
+    mem_gb_max: 2048
+
+required_fields: ["nodes", "time"]
+recommended_fields: ["qos"]
+default_time_days: 3
+
+slow_io_paths:
+  - path_markers: ["/nfs_home/"]
+    recommend: "/fastscratch"

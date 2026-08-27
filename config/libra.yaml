@@ -1,0 +1,39 @@
+cluster_name: "SLU Libra"
+
+# Every partition your cluster has. Any partition not listed here is treated
+# as invalid (a likely typo) by the checker.
+partitions:
+  compute:
+    is_default: true
+    has_gpu: false
+    cpus_per_task_max: 64      # 2x Xeon Gold 6526Y, 32C/64T, SMT enabled
+    mem_gb_max: 1024           # 1 TB per node
+
+  gpu:
+    is_default: false
+    has_gpu: true
+    gpu_max: 2                 # 2x NVIDIA L40S 48GB
+    cpus_per_task_max: 64
+    mem_gb_max: 512
+
+  machinelearning:
+    is_default: false
+    has_gpu: true
+    gpu_max: 4                 # 4x NVIDIA H100 80GB
+    cpus_per_task_max: 64
+    mem_gb_max: 1024
+
+# #SBATCH fields that must be present on every job script.
+required_fields: ["nodes", "gpus"]
+
+# #SBATCH fields that are best practice but not enforced by the scheduler.
+recommended_fields: ["account"]
+
+# If --time is omitted, this is the wall-clock default the scheduler applies.
+default_time_days: 7
+
+# Filesystem paths considered slow/inappropriate for data-intensive I/O,
+# with the recommended alternative.
+slow_io_paths:
+  - path_markers: ["/home/", "$HOME"]
+    recommend: "$SCRATCH"
