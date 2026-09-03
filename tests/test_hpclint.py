@@ -8,13 +8,10 @@ come back when the code changes later.
 """
 
 import os
-import sys
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from hpclint import check_script, parse_mem_to_gb, load_config  # noqa: E402
+from hpclint import check_script, parse_mem_to_gb, load_config
 
 FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
