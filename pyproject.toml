@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hpclint"
+version = "0.1.0"
+description = "A cluster-agnostic linter for Slurm job scripts — catches bad resource requests, missing fields, and misconfigurations before you submit, not after they fail."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.8"
+dependencies = [
+    "pyyaml>=5.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/vaniwalvekar/hpclint"
+
+[project.scripts]
+hpclint = "hpclint.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+include = ["hpclint*"]
