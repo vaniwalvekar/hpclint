@@ -1,6 +1,7 @@
-###### hpclint
+# hpclint
 
-***The missing pre-check for HPC jobs — and the first piece of a complete Slurm job assistant.***
+**The missing pre-flight check for HPC jobs — and the first piece of a
+complete Slurm job assistant.**
 
 Every HPC user has felt this: you write a job script, submit it, wait in
 queue for twenty minutes, and watch it die in the first second because you
@@ -60,13 +61,26 @@ watch the whole lifecycle, not just one moment of it.
 
 ## Where things stand today
 
-Right now, hpclint does the first item under **Before you submit**: it
-reads a Slurm script's `#SBATCH` directives and checks them against a
-cluster's real hardware and rules, defined in a simple YAML config so it
-works on any Slurm cluster, not just one institution's.
+hpclint fully covers the first item under **Before you submit** — and does
+it as a real, installable package, not just a script:
+
+- Checks `#SBATCH` directives against a cluster's real hardware and rules,
+  defined in a YAML config so it works on any Slurm cluster, not just one
+  institution's
+- Understands MPI vs. threaded parallelism, so it never wrongly flags a
+  job for using `--ntasks`/`mpirun` instead of `--cpus-per-task`
+- Catches core-overflow mistakes (`--ntasks-per-node` × `--cpus-per-task`
+  exceeding a node's real capacity) that are invisible looking at either
+  number alone
+- Flags referenced scripts/inputs that don't actually exist, while
+  correctly ignoring paths built from shell variables it can't resolve
+  (`$SCRATCH`, `$HOME`, etc.)
+- Parses memory units correctly (`G`/`GB`/`M`/`MB`/`T`/`TB`) — no more
+  `8000MB` being misread as 8000GB
+- Backed by a 14-test regression suite covering every one of the above
 
 ```
-$ python3 hpclint.py my_job.sh --config myuniversity.yaml
+$ hpclint my_job.sh --config myuniversity.yaml
 
 Checks completed. Here's the result:
 
@@ -89,11 +103,13 @@ Found 2 issue(s):
 2. No --account set. This cluster recommends always setting --account.
 ```
 
-Everything else above is the roadmap — the direction, not a promise of
-what exists yet. It's an early, actively-developed project, and it's
-built in the open on purpose: if you run Slurm and any of this resonates,
-your cluster's quirks and your ideas are exactly what would make this
-better.
+It's published on TestPyPI for now, with a real PyPI release planned once
+more of the roadmap below is built out. Everything under **While it
+runs**, **After it finishes**, and **Anywhere on the cluster** is still
+the roadmap — the direction, not a promise of what exists yet. It's an
+early, actively-developed project, built in the open on purpose: if you
+run Slurm and any of this resonates, your cluster's quirks and your ideas
+are exactly what would make this better.
 
 ## Why this doesn't already exist
 
@@ -105,16 +121,24 @@ hpclint is aiming to fill.
 
 ## Installation
 
+**From TestPyPI** (current release, while the project is still early):
+
 ```bash
-git clone https://github.com/<your-username>/hpclint.git
+pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ hpclint
+```
+
+**From source** (for development, or to get the latest unreleased changes):
+
+```bash
+git clone https://github.com/vaniwalvekar/hpclint.git
 cd hpclint
-pip install pyyaml
+pip install -e .
 ```
 
 ## Usage
 
 ```bash
-python3 hpclint.py <path_to_script> --config <path_to_cluster_config.yaml>
+hpclint <path_to_script> --config <path_to_cluster_config.yaml>
 ```
 
 Exit codes: `0` = no issues found, `1` = issues found, `2` = usage/file
@@ -153,6 +177,17 @@ slow_io_paths:
 
 Omit any section your cluster doesn't need — missing sections are treated
 as "not applicable," not errors.
+
+## Running the tests
+
+```bash
+pip install -e ".[dev]"
+python3 -m pytest tests/ -v
+```
+
+The suite locks in real bugs found during development (an MPI false
+positive, a memory-unit parsing bug, core-overflow math) so they can't
+silently come back.
 
 ## Contributing
 
