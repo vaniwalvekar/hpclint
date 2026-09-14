@@ -20,67 +20,50 @@ watch the whole lifecycle, not just one moment of it.
 
 ### 🧭 Before you submit
 *Catch the mistake while it's still free to fix.*
-- Check `#SBATCH` resource requests against your cluster's real hardware —
-  no more finding out `--mem=8000MB` was misread as 8000 GB, or that
-  `compute` nodes don't have GPUs, after the job's already queued
+- Check `#SBATCH` resource requests against your cluster's real hardware
 - Understand how a job actually parallelizes (MPI vs. threaded vs. hybrid)
   so it's never flagged for doing the right thing the "wrong" way
 - Warn about slow storage paths (`$HOME`) before a data-heavy job crawls
-- Estimate queue wait time and fairshare impact before you commit
-- Generate a correct starter script for your workload, instead of copying
-  someone else's and hoping
+- Catch core-overflow mistakes and missing referenced files
 
 ### 📡 While it runs
 *A job that's "running" isn't the same as a job that's working.*
-- A unified live view of CPU/memory/GPU usage — no more juggling `sstat`,
-  `nvidia-smi`, and `top` separately
+- A unified live view combining `squeue` state and `sstat` resource usage
 - **Detect a job that's stuck, not working** — running, maybe even pegged
-  at 100% CPU, but producing nothing: no new output files, no growing log,
-  no progress. That combination — busy but silent — is one of the hardest
-  failure modes to notice manually, and one of the most expensive, since
-  it can burn an entire walltime allocation before anyone checks in
-- Instant alerts the moment a job actually fails, instead of finding out
-  hours later
+  at 100% CPU, but producing nothing: no new output files, no progress.
+  That combination — busy but silent — is one of the hardest failure
+  modes to notice manually, and one of the most expensive, since it can
+  burn an entire walltime allocation before anyone checks in
 
 ### 🔍 After it finishes
-*Turn "it failed" into "here's why, and here's the fix."*
+*Turn "it failed" into "here's why, and here's the fix." (planned)*
 - Translate cryptic exit codes, OOM kills, and segfaults into plain
   language with a likely cause
-- Track your own jobs over time and spot patterns — "you've over-requested
-  memory by 3x on your last five jobs"
-- Suggest a corrected resubmission after a known failure type
+- Track your own jobs over time and spot recurring over-request patterns
 
 ### 🗺️ Anywhere on the cluster
-*The stuff that has nothing to do with any one job, but eats time anyway.*
+*The stuff that has nothing to do with any one job, but eats time anyway. (planned)*
 - "I need GROMACS" → the right `module load` command, instantly
 - Storage quota checks before `$HOME` quietly fills up
-- Catch `$PATH`/conda/module conflicts before they cause a mysterious
-  failure
 - "Which partition should I use?" — recommend resources from a plain
   description of the workload
 
 ## Where things stand today
 
-hpclint fully covers the first item under **Before you submit** — and does
-it as a real, installable package, not just a script:
+**Before you submit** and **While it runs** are both functional:
 
-- Checks `#SBATCH` directives against a cluster's real hardware and rules,
-  defined in a YAML config so it works on any Slurm cluster, not just one
-  institution's
-- Understands MPI vs. threaded parallelism, so it never wrongly flags a
-  job for using `--ntasks`/`mpirun` instead of `--cpus-per-task`
-- Catches core-overflow mistakes (`--ntasks-per-node` × `--cpus-per-task`
-  exceeding a node's real capacity) that are invisible looking at either
-  number alone
-- Flags referenced scripts/inputs that don't actually exist, while
-  correctly ignoring paths built from shell variables it can't resolve
-  (`$SCRATCH`, `$HOME`, etc.)
-- Parses memory units correctly (`G`/`GB`/`M`/`MB`/`T`/`TB`) — no more
-  `8000MB` being misread as 8000GB
-- Backed by a 14-test regression suite covering every one of the above
+- `hpclint check` — validates `#SBATCH` directives against a cluster's
+  real hardware and rules (YAML-configured, works on any Slurm cluster),
+  MPI-vs-threaded aware, catches core-overflow math and missing
+  referenced files, unit-safe memory parsing
+- `hpclint watch` — combines live `squeue`/`sstat` status with output
+  directory activity to flag the "busy but silent" stuck-job pattern
+- 29-test regression suite covering both, including realistic fixture
+  `squeue`/`sstat` output text (the actual subprocess calls will be
+  verified against real Slurm on Libra once more of the roadmap is built)
 
 ```
-$ hpclint my_job.sh --config myuniversity.yaml
+$ hpclint check my_job.sh --config myuniversity.yaml
 
 Checks completed. Here's the result:
 
@@ -104,12 +87,12 @@ Found 2 issue(s):
 ```
 
 It's published on TestPyPI for now, with a real PyPI release planned once
-more of the roadmap below is built out. Everything under **While it
-runs**, **After it finishes**, and **Anywhere on the cluster** is still
-the roadmap — the direction, not a promise of what exists yet. It's an
-early, actively-developed project, built in the open on purpose: if you
-run Slurm and any of this resonates, your cluster's quirks and your ideas
-are exactly what would make this better.
+more of the roadmap is built out and verified end-to-end on a real
+cluster. **After it finishes** and **Anywhere on the cluster** are still
+the roadmap, not built yet. It's an early, actively-developed project,
+built in the open on purpose: if you run Slurm and any of this resonates,
+your cluster's quirks and your ideas are exactly what would make this
+better.
 
 ## Why this doesn't already exist
 
@@ -137,12 +120,22 @@ pip install -e .
 
 ## Usage
 
+**Check a script before submitting:**
 ```bash
-hpclint <path_to_script> --config <path_to_cluster_config.yaml>
+hpclint check <path_to_script> --config <path_to_cluster_config.yaml>
 ```
 
-Exit codes: `0` = no issues found, `1` = issues found, `2` = usage/file
-error.
+**Watch a running job's live status:**
+```bash
+hpclint watch <jobid> --output-dir <path_the_job_writes_to> [--stale-minutes 30]
+```
+Flags a job that's `RUNNING` and burning CPU time, but hasn't changed
+anything in its output directory recently — the "busy but silent" pattern
+that's easy to miss manually and can burn an entire walltime allocation
+before anyone notices.
+
+Exit codes (for `check`): `0` = no issues found, `1` = issues found,
+`2` = usage/file error.
 
 ## Writing a config for your cluster
 
@@ -186,8 +179,9 @@ python3 -m pytest tests/ -v
 ```
 
 The suite locks in real bugs found during development (an MPI false
-positive, a memory-unit parsing bug, core-overflow math) so they can't
-silently come back.
+positive, a memory-unit parsing bug, core-overflow math) and validates
+the monitoring logic against realistic sample Slurm output, so these
+can't silently break later.
 
 ## Contributing
 

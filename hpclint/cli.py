@@ -1,19 +1,29 @@
 """
 hpclint.cli — command-line entry point for hpclint.
+
+Subcommands:
+    hpclint check <script> --config <config.yaml>   Pre-submission script check
+    hpclint watch <jobid> [--output-dir DIR]         Live job health check
+    hpclint diagnose <jobid>                         Post-run failure explanation
 """
 
 import sys
+import os
 import argparse
 
 from .checker import check_script, load_config
+from .monitor import (
+    run_squeue,
+    run_sstat,
+    parse_squeue_line,
+    parse_sstat_line,
+    check_output_activity,
+    assess_job_health,
+)
+from .diagnose import run_sacct, parse_sacct_line, diagnose
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Check a Slurm job script against your cluster's real limits.")
-    parser.add_argument("script", help="Path to the Slurm job script (.sh/.slurm) to check")
-    parser.add_argument("--config", required=True, help="Path to your cluster's YAML config file")
-    args = parser.parse_args()
-
+def _run_check(args):
     try:
         config = load_config(args.config)
     except FileNotFoundError:
@@ -44,6 +54,78 @@ def main():
     else:
         print("No issues found.")
         sys.exit(0)
+
+
+def _run_watch(args):
+    squeue_raw = run_squeue(args.jobid)
+    squeue_info = parse_squeue_line(squeue_raw)
+
+    sstat_raw = run_sstat(args.jobid)
+    sstat_info = parse_sstat_line(sstat_raw)
+
+    activity_info = check_output_activity(args.output_dir, stale_after_minutes=args.stale_minutes)
+
+    print(f"Job {args.jobid} — live status\n")
+
+    if squeue_info:
+        print(f"State:         {squeue_info['state']}")
+        print(f"Time used:     {squeue_info['time_used']} / {squeue_info['time_limit']}")
+        print(f"Nodes/CPUs:    {squeue_info['nodes']} / {squeue_info['cpus']}")
+    else:
+        print("State:         not found in queue (may have finished)")
+
+    if sstat_info:
+        print(f"Avg CPU:       {sstat_info['ave_cpu']}")
+        print(f"Max RSS:       {sstat_info['max_rss']}")
+
+    print(f"Output dir:    {args.output_dir}")
+    if activity_info.get("exists") and activity_info.get("minutes_since_change") is not None:
+        print(f"Last change:   {activity_info['minutes_since_change']:.1f} minutes ago "
+              f"({activity_info['most_recent_file']})")
+
+    print()
+    print(assess_job_health(squeue_info, activity_info))
+
+
+def _run_diagnose(args):
+    sacct_raw = run_sacct(args.jobid)
+    sacct_info = parse_sacct_line(sacct_raw)
+
+    print(f"Job {args.jobid} — post-run diagnosis\n")
+    print(diagnose(sacct_info))
+
+
+def main():
+    parser = argparse.ArgumentParser(description="hpclint — a cluster-agnostic Slurm job assistant.")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    check_parser = subparsers.add_parser("check", help="Check a job script before submission")
+    check_parser.add_argument("script", help="Path to the Slurm job script (.sh/.slurm) to check")
+    check_parser.add_argument(
+        "--config",
+        default=os.environ.get("HPCLINT_DEFAULT_CONFIG"),
+        required=os.environ.get("HPCLINT_DEFAULT_CONFIG") is None,
+        help="Path to your cluster's YAML config file. Falls back to $HPCLINT_DEFAULT_CONFIG if set "
+             "(e.g. via `module load hpclint`), so it's optional in that case.",
+    )
+
+    watch_parser = subparsers.add_parser("watch", help="Check a running job's live status")
+    watch_parser.add_argument("jobid", help="Slurm job ID to check")
+    watch_parser.add_argument("--output-dir", required=True, help="Directory the job writes output to")
+    watch_parser.add_argument("--stale-minutes", type=int, default=30,
+                               help="Minutes of no file activity before flagging as stale (default: 30)")
+
+    diagnose_parser = subparsers.add_parser("diagnose", help="Explain why a finished job failed (or didn't)")
+    diagnose_parser.add_argument("jobid", help="Slurm job ID to diagnose")
+
+    args = parser.parse_args()
+
+    if args.command == "check":
+        _run_check(args)
+    elif args.command == "watch":
+        _run_watch(args)
+    elif args.command == "diagnose":
+        _run_diagnose(args)
 
 
 if __name__ == "__main__":

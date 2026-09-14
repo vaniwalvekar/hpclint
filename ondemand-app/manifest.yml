@@ -1,0 +1,10 @@
+---
+name: hpclint
+category: Research Computing
+subcategory: Job Tools
+role: batch_connect
+description: |
+  Check a Slurm job script against Libra's real hardware and submission
+  rules before you submit it — catches bad resource requests, missing
+  fields, and misconfigurations early.
+icon: fa://clipboard-check

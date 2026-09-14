@@ -1,0 +1,14 @@
+<h2>hpclint — result</h2>
+
+<pre><%= @output %></pre>
+
+<% if @error_output && !@error_output.empty? %>
+  <p style="color: red;"><strong>Errors:</strong></p>
+  <pre style="color: red;"><%= @error_output %></pre>
+<% end %>
+
+<% if @exit_status == 0 %>
+  <p style="color: green;"><strong>No issues found.</strong></p>
+<% end %>
+
+<a href="/">Check another script</a>

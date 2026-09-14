@@ -1,0 +1,25 @@
+cluster_name: "SLU Libra"
+partitions:
+  compute:
+    is_default: true
+    has_gpu: false
+    cpus_per_task_max: 64
+    mem_gb_max: 1024
+  gpu:
+    is_default: false
+    has_gpu: true
+    gpu_max: 2
+    cpus_per_task_max: 64
+    mem_gb_max: 512
+  machinelearning:
+    is_default: false
+    has_gpu: true
+    gpu_max: 4
+    cpus_per_task_max: 64
+    mem_gb_max: 1024
+required_fields: ["nodes", "gpus"]
+recommended_fields: ["account"]
+default_time_days: 7
+slow_io_paths:
+  - path_markers: ["/home/", "$HOME"]
+    recommend: "$SCRATCH"
