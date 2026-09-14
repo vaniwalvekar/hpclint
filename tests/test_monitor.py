@@ -97,6 +97,14 @@ def test_output_activity_empty_dir_is_stale(tmp_path):
     assert result["exists"] is True
     assert result["stale"] is True
     assert result["most_recent_file"] is None
+    assert result["file_count"] == 0
+
+
+def test_output_activity_reports_file_count(tmp_path):
+    (tmp_path / "a.log").write_text("x")
+    (tmp_path / "b.log").write_text("y")
+    result = check_output_activity(str(tmp_path))
+    assert result["file_count"] == 2
 
 
 # --- combined health verdict --------------------------------------------------
@@ -135,3 +143,23 @@ def test_assess_health_early_startup_not_flagged_as_stuck():
     activity_info = {"exists": True, "stale": True, "minutes_since_change": 40, "most_recent_file": None}
     verdict = assess_job_health(squeue_info, activity_info)
     assert "busy-but-silent" not in verdict
+
+
+def test_assess_health_long_running_with_zero_files_ever_flagged():
+    # The specific gap being fixed: a job that has run a long time and
+    # never written a single file, not just one that's gone stale partway.
+    squeue_info = {"jobid": "1", "state": "RUNNING", "time_used": "05:00:00", "time_limit": "1-00:00:00", "nodes": 1, "cpus": 8}
+    activity_info = {"exists": True, "stale": True, "minutes_since_change": None, "most_recent_file": None, "file_count": 0}
+    verdict = assess_job_health(squeue_info, activity_info)
+    assert "never written" in verdict.lower()
+    assert "05:00:00" in verdict
+
+
+def test_assess_health_just_started_with_zero_files_not_alarming():
+    # Same zero-files situation, but the job just started — this should
+    # read as "too early to tell," not "stuck."
+    squeue_info = {"jobid": "1", "state": "RUNNING", "time_used": "0:10", "time_limit": "1-00:00:00", "nodes": 1, "cpus": 8}
+    activity_info = {"exists": True, "stale": True, "minutes_since_change": None, "most_recent_file": None, "file_count": 0}
+    verdict = assess_job_health(squeue_info, activity_info)
+    assert "hasn't written anything" in verdict.lower()
+    assert "not concerning yet" in verdict.lower()

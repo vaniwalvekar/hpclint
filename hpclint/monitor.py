@@ -77,14 +77,26 @@ def parse_sstat_line(line):
 def check_output_activity(output_dir, stale_after_minutes=30):
     """Look at every file's modification time under output_dir and report
     how long it's been since anything changed. Used to detect a job that's
-    running but not actually producing anything."""
+    running but not actually producing anything.
+
+    Distinguishes two different problems:
+      - the directory has files, but none have changed in a while (stale)
+      - the directory has never had a single file written to it (empty)
+    These call for different messages: "stalled partway through" reads very
+    differently from "never started producing anything at all."
+    """
     if not os.path.isdir(output_dir):
-        return {"exists": False, "stale": None, "minutes_since_change": None, "most_recent_file": None}
+        return {
+            "exists": False, "stale": None, "minutes_since_change": None,
+            "most_recent_file": None, "file_count": 0,
+        }
 
     most_recent_mtime = None
     most_recent_file = None
+    file_count = 0
     for root, _, files in os.walk(output_dir):
         for name in files:
+            file_count += 1
             path = os.path.join(root, name)
             try:
                 mtime = os.path.getmtime(path)
@@ -95,7 +107,10 @@ def check_output_activity(output_dir, stale_after_minutes=30):
                 most_recent_file = path
 
     if most_recent_mtime is None:
-        return {"exists": True, "stale": True, "minutes_since_change": None, "most_recent_file": None}
+        return {
+            "exists": True, "stale": True, "minutes_since_change": None,
+            "most_recent_file": None, "file_count": file_count,
+        }
 
     minutes_since_change = (time.time() - most_recent_mtime) / 60
     return {
@@ -103,6 +118,7 @@ def check_output_activity(output_dir, stale_after_minutes=30):
         "stale": minutes_since_change > stale_after_minutes,
         "minutes_since_change": minutes_since_change,
         "most_recent_file": most_recent_file,
+        "file_count": file_count,
     }
 
 
@@ -145,6 +161,22 @@ def assess_job_health(squeue_info, activity_info, high_cpu_time_threshold_second
             "Job is RUNNING, but the expected output directory doesn't exist yet. "
             "Too early to tell if it's making progress."
         )
+
+    if activity_info.get("file_count") == 0:
+        elapsed = squeue_info.get("time_used", "an unknown amount of time")
+        if has_accrued_cpu_time:
+            return (
+                f"Job is RUNNING and has been going for {elapsed}, but has never written a single "
+                f"file to the output directory. For a job running this long, that's a strong sign "
+                f"it's stuck, deadlocked, or writing somewhere other than where you're checking — "
+                f"worth investigating directly."
+            )
+        else:
+            return (
+                f"Job is RUNNING ({elapsed} so far) and hasn't written anything to the output "
+                f"directory yet. Likely still starting up (loading modules, reading input) — "
+                f"not concerning yet, but worth another look if it's still empty later."
+            )
 
     if activity_info.get("stale"):
         if has_accrued_cpu_time:
