@@ -21,6 +21,7 @@ from .monitor import (
     assess_job_health,
 )
 from .diagnose import run_sacct, parse_sacct_line, diagnose
+from .slurm import SlurmCommandError
 
 
 def _run_check(args):
@@ -122,10 +123,16 @@ def main():
 
     if args.command == "check":
         _run_check(args)
-    elif args.command == "watch":
-        _run_watch(args)
-    elif args.command == "diagnose":
-        _run_diagnose(args)
+        return
+
+    try:
+        if args.command == "watch":
+            _run_watch(args)
+        elif args.command == "diagnose":
+            _run_diagnose(args)
+    except SlurmCommandError as exc:
+        print(f"Error: could not query Slurm — {exc}")
+        sys.exit(2)
 
 
 if __name__ == "__main__":

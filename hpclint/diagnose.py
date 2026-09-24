@@ -11,8 +11,7 @@ Slurm cluster and gets verified there per the project's end-to-end
 verification plan.
 """
 
-import subprocess
-
+from .slurm import run_slurm
 
 # Common Slurm job end states and what they mean in plain language.
 _STATE_EXPLANATIONS = {
@@ -48,8 +47,7 @@ def run_sacct(jobid):
     """Run sacct for one job and return its raw pipe-delimited output line
     for the main job step, or None if not found."""
     cmd = ["sacct", "-j", str(jobid), "--format=JobID,State,ExitCode", "-P", "-n"]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    lines = [l for l in result.stdout.strip().split("\n") if l]
+    lines = [l for l in run_slurm(cmd).strip().split("\n") if l]
     if not lines:
         return None
     # The first line is normally the main job (jobid with no suffix like .batch/.extern)
