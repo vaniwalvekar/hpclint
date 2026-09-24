@@ -36,10 +36,11 @@ watch the whole lifecycle, not just one moment of it.
   burn an entire walltime allocation before anyone checks in
 
 ### 🔍 After it finishes
-*Turn "it failed" into "here's why, and here's the fix." (planned)*
-- Translate cryptic exit codes, OOM kills, and segfaults into plain
-  language with a likely cause
-- Track your own jobs over time and spot recurring over-request patterns
+*Turn "it failed" into "here's why, and here's the fix."*
+- `hpclint diagnose` translates cryptic exit codes, OOM kills, timeouts,
+  segfaults, cancellations, and node failures into plain language with a
+  likely cause and a next step
+- (planned) Track your own jobs over time and spot recurring over-request patterns
 
 ### 🗺️ Anywhere on the cluster
 *The stuff that has nothing to do with any one job, but eats time anyway. (planned)*
@@ -50,25 +51,31 @@ watch the whole lifecycle, not just one moment of it.
 
 ## Where things stand today
 
-**Before you submit** and **While it runs** are both functional:
+All three job-lifecycle commands are functional:
 
-- `hpclint check` — validates `#SBATCH` directives against a cluster's
-  real hardware and rules (YAML-configured, works on any Slurm cluster),
-  MPI-vs-threaded aware, catches core-overflow math and missing
-  referenced files, unit-safe memory parsing
-- `hpclint watch` — combines live `squeue`/`sstat` status with output
-  directory activity to flag the "busy but silent" stuck-job pattern
-- 29-test regression suite covering both, including realistic fixture
-  `squeue`/`sstat` output text (the actual subprocess calls will be
-  verified against real Slurm on Libra once more of the roadmap is built)
+- `hpclint check` — validates `#SBATCH` directives against a cluster's real
+  hardware and rules (YAML-configured, works on any Slurm cluster):
+  MPI-vs-threaded aware, core-overflow math, missing referenced files,
+  slow-storage warnings, unit-safe memory parsing.
+- `hpclint watch` — combines live `squeue`/`sstat` status with output-directory
+  activity, and decides "busy vs stuck" from real **CPU time (`AveCPU`)**, not
+  wall-clock — so a deadlocked low-CPU job reads as *blocked*, distinct from a
+  CPU-bound-but-silent one.
+- `hpclint diagnose` — turns a finished job's `sacct` state + exit code into a
+  plain-language cause and fix (OOM, timeout, segfault, cancel, node failure).
+- CI runs a **75+ test** suite (pure-logic plus realistic Slurm fixture text)
+  across Python 3.8–3.12 on every push; end-to-end verification against live
+  Slurm on Libra is the current milestone.
+- `check`, `watch`, and `diagnose` each return meaningful exit codes
+  (`0` ok · `1` problem · `2` couldn't determine), so they're scriptable.
 
 ```
-$ hpclint check my_job.sh --config myuniversity.yaml
+$ hpclint check scripts/train.sh --config configs/libra.yaml
 
 Checks completed. Here's the result:
 
-Cluster:       My University HPC
-File checked:  my_job.sh
+Cluster:       SLU Libra
+File checked:  scripts/train.sh
 
 Parameters checked:
   --partition = compute
@@ -76,6 +83,8 @@ Parameters checked:
   --gpus = (not set)
   --account = (not set)
   --cpus-per-task = 4
+  --ntasks = (not set)
+  --ntasks-per-node = (not set)
   --mem = 16G
   --time = 01:00:00
 
@@ -86,13 +95,14 @@ Found 2 issue(s):
 2. No --account set. This cluster recommends always setting --account.
 ```
 
-It's published on TestPyPI for now, with a real PyPI release planned once
-more of the roadmap is built out and verified end-to-end on a real
-cluster. **After it finishes** and **Anywhere on the cluster** are still
-the roadmap, not built yet. It's an early, actively-developed project,
-built in the open on purpose: if you run Slurm and any of this resonates,
-your cluster's quirks and your ideas are exactly what would make this
-better.
+All three core commands — **before** (`check`), **while** (`watch`), and
+**after** (`diagnose`) — are built and unit-tested; end-to-end verification on
+live Slurm (Libra) is the current milestone. It's published on TestPyPI for now,
+with a real PyPI release planned once that verification is done. **Anywhere on
+the cluster** is still on the roadmap, not built yet. It's an early,
+actively-developed project, built in the open on purpose: if you run Slurm and
+any of this resonates, your cluster's quirks and your ideas are exactly what
+would make this better.
 
 ## Why this doesn't already exist
 
@@ -129,13 +139,27 @@ hpclint check <path_to_script> --config <path_to_cluster_config.yaml>
 ```bash
 hpclint watch <jobid> --output-dir <path_the_job_writes_to> [--stale-minutes 30]
 ```
-Flags a job that's `RUNNING` and burning CPU time, but hasn't changed
-anything in its output directory recently — the "busy but silent" pattern
-that's easy to miss manually and can burn an entire walltime allocation
-before anyone notices.
+Combines `squeue` + `sstat` with output-directory activity. It decides whether a
+job is actually *working* from real CPU time (`AveCPU`), so it distinguishes the
+**busy-but-silent** pattern (high CPU, no new output — likely stuck in a loop)
+from a **blocked** one (long-running but using almost no CPU — likely deadlocked
+or waiting on a resource). Both can silently burn an entire allocation.
 
-Exit codes (for `check`): `0` = no issues found, `1` = issues found,
-`2` = usage/file error.
+**Diagnose a finished job:**
+```bash
+hpclint diagnose <jobid>
+```
+Reads the job's `sacct` state and exit code and explains it in plain language —
+OOM, timeout, segfault, cancellation, node failure, or a normal finish — with a
+likely next step.
+
+### Exit codes
+
+| Code | `check` | `watch` | `diagnose` |
+|------|---------|---------|------------|
+| `0` | no issues | nothing concerning | benign outcome (ok/cancelled/still queued) |
+| `1` | issues found | problem (stuck/blocked/busy-silent) | failure / unrecognized state |
+| `2` | usage or file error | couldn't determine (job not in queue / Slurm error) | no record / Slurm command error |
 
 ## Writing a config for your cluster
 
@@ -143,7 +167,7 @@ See [`configs/libra.yaml`](configs/libra.yaml) for a full real-world
 example. The shape is:
 
 ```yaml
-cluster_name: "My University HPC"
+cluster_name: "SLU Libra"
 
 partitions:
   compute:
@@ -155,7 +179,7 @@ partitions:
   gpu:
     is_default: false
     has_gpu: true
-    gpu_max: 4
+    gpu_max: 2
     cpus_per_task_max: 64
     mem_gb_max: 512
 
