@@ -17,7 +17,33 @@ from hpclint.monitor import (
     check_output_activity,
     assess_job_health,
     _parse_cpu_time_to_seconds,
+    select_squeue_line,
 )
+
+# --- squeue multi-line selection (HPC-2: array/step jobs) ------------------
+
+def test_select_squeue_single_line():
+    out = "12345|RUNNING|01:23:45|1-00:00:00|2|16\n"
+    assert select_squeue_line(out, 12345) == "12345|RUNNING|01:23:45|1-00:00:00|2|16"
+
+def test_select_squeue_picks_main_among_steps():
+    out = (
+        "12345|RUNNING|01:23:45|1-00:00:00|2|16\n"
+        "12345.batch|RUNNING|01:23:44|1-00:00:00|2|16\n"
+        "12345.extern|RUNNING|01:23:44|1-00:00:00|2|16\n"
+    )
+    assert select_squeue_line(out, 12345).startswith("12345|")
+
+def test_select_squeue_array_falls_back_to_first_task():
+    out = (
+        "12345_0|RUNNING|00:10:00|01:00:00|1|8\n"
+        "12345_1|PENDING|00:00:00|01:00:00|1|8\n"
+    )
+    assert select_squeue_line(out, 12345).startswith("12345_0|")
+
+def test_select_squeue_empty_returns_none():
+    assert select_squeue_line("", 12345) is None
+    assert select_squeue_line("   \n  \n", 12345) is None
 
 # --- CPU/elapsed time parsing (HPC-1: D-HH:MM:SS crash) --------------------
 
