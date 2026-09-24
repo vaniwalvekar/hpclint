@@ -43,7 +43,7 @@ def select_squeue_line(text, jobid):
 def run_squeue(jobid):
     """Run squeue for one job and return its raw pipe-delimited output line,
     or None if the job isn't found (e.g. already finished)."""
-    cmd = ["squeue", "-h", "-j", str(jobid), "-o", "%i|%T|%M|%l|%D|%C"]
+    cmd = ["squeue", "-h", "-P", "-j", str(jobid), "-o", "%i|%T|%M|%l|%D|%C"]
     return select_squeue_line(run_slurm(cmd), jobid)
 
 
@@ -57,11 +57,23 @@ def run_sstat(jobid):
 
 # --- Parsing (pure functions, testable with fixture text) -----------------
 
+def _to_int(value, default=0):
+    """Best-effort int for squeue numeric fields; never raises."""
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return default
+
+
 def parse_squeue_line(line):
-    """Parse one line of `squeue -o "%i|%T|%M|%l|%D|%C"` output."""
+    """Parse one line of `squeue -P -o "%i|%T|%M|%l|%D|%C"` output.
+
+    Fields are stripped because some Slurm builds pad them to column width
+    even in parsable mode; numeric fields fall back to 0 instead of raising.
+    """
     if not line:
         return None
-    parts = line.strip().split("|")
+    parts = [p.strip() for p in line.strip().split("|")]
     if len(parts) != 6:
         return None
     jobid, state, time_used, time_limit, nodes, cpus = parts
@@ -70,8 +82,8 @@ def parse_squeue_line(line):
         "state": state,
         "time_used": time_used,
         "time_limit": time_limit,
-        "nodes": int(nodes),
-        "cpus": int(cpus),
+        "nodes": _to_int(nodes),
+        "cpus": _to_int(cpus),
     }
 
 
