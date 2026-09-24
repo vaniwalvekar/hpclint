@@ -18,6 +18,7 @@ from hpclint.monitor import (
     assess_job_health,
     _parse_cpu_time_to_seconds,
     select_squeue_line,
+    health_exit_code,
 )
 
 # --- squeue multi-line selection (HPC-2: array/step jobs) ------------------
@@ -253,3 +254,39 @@ def test_assess_health_early_startup_with_low_avecpu_not_blocked():
     verdict = assess_job_health(squeue_info, activity_info, sstat_info)
     assert "not concerning yet" in verdict.lower()
     assert "blocked" not in verdict.lower()
+
+
+# --- HPC-6: watch exit codes ------------------------------------------------
+
+def test_exit_code_not_found_is_2():
+    assert health_exit_code(None, {"exists": False}) == 2
+
+def test_exit_code_pending_is_0():
+    assert health_exit_code({"state": "PENDING", "time_used": "0:00"}, {"exists": False}) == 0
+
+def test_exit_code_healthy_is_0():
+    q = {"state": "RUNNING", "time_used": "02:15:00", "cpus": 8}
+    act = {"exists": True, "stale": False, "file_count": 5, "minutes_since_change": 2}
+    assert health_exit_code(q, act, {"ave_cpu": "02:10:00"}) == 0
+
+def test_exit_code_busy_but_silent_is_1():
+    q = {"state": "RUNNING", "time_used": "00:30", "cpus": 8}
+    act = {"exists": True, "stale": True, "file_count": 1, "minutes_since_change": 120}
+    assert health_exit_code(q, act, {"ave_cpu": "05:00:00"}) == 1
+
+def test_exit_code_blocked_zero_files_is_1():
+    q = {"state": "RUNNING", "time_used": "02:00:00", "cpus": 8}
+    act = {"exists": True, "stale": True, "file_count": 0, "minutes_since_change": None}
+    assert health_exit_code(q, act, {"ave_cpu": "00:00:03"}) == 1
+
+def test_exit_code_just_started_is_0():
+    q = {"state": "RUNNING", "time_used": "00:20", "cpus": 8}
+    act = {"exists": True, "stale": True, "file_count": 0, "minutes_since_change": None}
+    assert health_exit_code(q, act, {"ave_cpu": "00:00:02"}) == 0
+
+def test_exit_code_matches_verdict_for_busy_but_silent():
+    # Guard: the message and the code must agree on the same scenario.
+    q = {"state": "RUNNING", "time_used": "00:30", "cpus": 8}
+    act = {"exists": True, "stale": True, "file_count": 1, "minutes_since_change": 120}
+    verdict = assess_job_health(q, act, {"ave_cpu": "05:00:00"})
+    assert "busy-but-silent" in verdict and health_exit_code(q, act, {"ave_cpu": "05:00:00"}) == 1

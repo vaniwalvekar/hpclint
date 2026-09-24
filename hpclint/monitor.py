@@ -251,3 +251,43 @@ def assess_job_health(squeue_info, activity_info, sstat_info=None, high_cpu_time
             )
 
     return "Job is RUNNING and the output directory is being actively updated. Looks healthy."
+
+
+def health_exit_code(squeue_info, activity_info, sstat_info=None, high_cpu_time_threshold_seconds=60):
+    """Process exit code for a watch verdict, mirroring assess_job_health:
+
+        0 = nothing concerning (healthy / starting up / not running / too early)
+        1 = a problem is indicated (busy-but-silent, never-written, blocked)
+        2 = cannot determine (job not in the queue)
+
+    Kept in lockstep with assess_job_health by tests in test_monitor.py.
+    """
+    if squeue_info is None:
+        return 2
+    if squeue_info.get("state") != "RUNNING":
+        return 0
+
+    wall_seconds = _parse_cpu_time_to_seconds(squeue_info.get("time_used"))
+    ave = (
+        _parse_cpu_time_to_seconds(sstat_info.get("ave_cpu"))
+        if sstat_info and sstat_info.get("ave_cpu") else None
+    )
+    if ave is not None:
+        busy = ave >= high_cpu_time_threshold_seconds
+        cpu_known = True
+    else:
+        busy = wall_seconds is not None and wall_seconds >= high_cpu_time_threshold_seconds
+        cpu_known = False
+
+    if not activity_info.get("exists"):
+        return 0
+
+    if activity_info.get("file_count") == 0:
+        blocked = (cpu_known and not busy
+                   and wall_seconds is not None
+                   and wall_seconds >= high_cpu_time_threshold_seconds)
+        return 1 if (busy or blocked) else 0
+
+    if activity_info.get("stale") and busy:
+        return 1
+    return 0

@@ -19,8 +19,9 @@ from .monitor import (
     parse_sstat_line,
     check_output_activity,
     assess_job_health,
+    health_exit_code,
 )
-from .diagnose import run_sacct, parse_sacct_line, diagnose
+from .diagnose import run_sacct, parse_sacct_line, diagnose, diagnose_exit_code
 from .slurm import SlurmCommandError
 
 
@@ -86,6 +87,7 @@ def _run_watch(args):
 
     print()
     print(assess_job_health(squeue_info, activity_info, sstat_info))
+    return health_exit_code(squeue_info, activity_info, sstat_info)
 
 
 def _run_diagnose(args):
@@ -94,6 +96,7 @@ def _run_diagnose(args):
 
     print(f"Job {args.jobid} — post-run diagnosis\n")
     print(diagnose(sacct_info))
+    return diagnose_exit_code(sacct_info)
 
 
 def main():
@@ -127,9 +130,9 @@ def main():
 
     try:
         if args.command == "watch":
-            _run_watch(args)
+            sys.exit(_run_watch(args))
         elif args.command == "diagnose":
-            _run_diagnose(args)
+            sys.exit(_run_diagnose(args))
     except SlurmCommandError as exc:
         print(f"Error: could not query Slurm — {exc}")
         sys.exit(2)

@@ -4,7 +4,7 @@ against realistic fixture sacct output text (the real subprocess call
 gets verified on Libra later, same as monitor.py).
 """
 
-from hpclint.diagnose import parse_sacct_line, diagnose
+from hpclint.diagnose import parse_sacct_line, diagnose, diagnose_exit_code
 
 
 # --- sacct parsing -----------------------------------------------------------
@@ -107,3 +107,30 @@ def test_diagnose_running_is_transient():
     result = diagnose(info)
     assert "running" in result.lower()
     assert "no specific explanation" not in result
+
+
+# --- HPC-6: diagnose exit codes --------------------------------------------
+
+def test_diag_exit_no_record_is_2():
+    assert diagnose_exit_code(None) == 2
+
+def test_diag_exit_completed_is_0():
+    assert diagnose_exit_code({"state": "COMPLETED", "exit_code": "0"}) == 0
+
+def test_diag_exit_failed_is_1():
+    assert diagnose_exit_code({"state": "FAILED", "exit_code": "1"}) == 1
+
+def test_diag_exit_oom_is_1():
+    assert diagnose_exit_code({"state": "OUT_OF_MEMORY", "exit_code": "0:125"}) == 1
+
+def test_diag_exit_cancelled_is_0():
+    assert diagnose_exit_code({"state": "CANCELLED by 1042", "exit_code": "0"}) == 0
+
+def test_diag_exit_pending_is_0():
+    assert diagnose_exit_code({"state": "PENDING", "exit_code": "0"}) == 0
+
+def test_diag_exit_unknown_state_is_1():
+    assert diagnose_exit_code({"state": "WEIRD_NEW_STATE", "exit_code": "0"}) == 1
+
+def test_diag_exit_completed_but_nonzero_exit_bumped_to_1():
+    assert diagnose_exit_code({"state": "COMPLETED", "exit_code": "2"}) == 1
