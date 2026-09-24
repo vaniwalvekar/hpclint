@@ -125,15 +125,31 @@ def check_output_activity(output_dir, stale_after_minutes=30):
 # --- Combined health verdict ------------------------------------------------
 
 def _parse_cpu_time_to_seconds(time_str):
-    """Parse a Slurm time string (e.g. '01:23:45' or '23:45' or '45') into seconds."""
+    """Parse a Slurm time string into seconds.
+
+    Handles every format Slurm emits for Time/TimeUsed:
+      'MM:SS', 'HH:MM:SS', and 'D-HH:MM:SS' (and 'D-HH:MM').
+    Returns None if the value cannot be parsed (e.g. 'N/A').
+    """
     if not time_str:
         return 0
-    parts = time_str.split(":")
-    parts = [int(p) for p in parts]
-    while len(parts) < 3:
-        parts.insert(0, 0)
-    hours, minutes, seconds = parts[-3:]
-    return hours * 3600 + minutes * 60 + seconds
+    s = time_str.strip()
+    days = 0
+    if "-" in s:
+        day_part, _, s = s.partition("-")
+        try:
+            days = int(day_part)
+        except ValueError:
+            return None
+    parts = s.split(":")
+    try:
+        nums = [int(p) for p in parts]
+    except ValueError:
+        return None
+    while len(nums) < 3:
+        nums.insert(0, 0)
+    hours, minutes, seconds = nums[-3:]
+    return days * 86400 + hours * 3600 + minutes * 60 + seconds
 
 
 def assess_job_health(squeue_info, activity_info, high_cpu_time_threshold_seconds=60):
@@ -154,7 +170,7 @@ def assess_job_health(squeue_info, activity_info, high_cpu_time_threshold_second
         return f"Job is in state '{state}' — not yet running, nothing to assess."
 
     cpu_time_seconds = _parse_cpu_time_to_seconds(squeue_info.get("time_used"))
-    has_accrued_cpu_time = cpu_time_seconds >= high_cpu_time_threshold_seconds
+    has_accrued_cpu_time = cpu_time_seconds is not None and cpu_time_seconds >= high_cpu_time_threshold_seconds
 
     if not activity_info.get("exists"):
         return (
