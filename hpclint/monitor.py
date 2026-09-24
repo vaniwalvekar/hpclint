@@ -12,8 +12,9 @@ and only the wrapper needs a real cluster to exercise.
 """
 
 import os
-import subprocess
 import time
+
+from .slurm import run_slurm
 
 
 # --- Subprocess wrappers (need a real Slurm cluster to actually run) ------
@@ -43,17 +44,15 @@ def run_squeue(jobid):
     """Run squeue for one job and return its raw pipe-delimited output line,
     or None if the job isn't found (e.g. already finished)."""
     cmd = ["squeue", "-h", "-j", str(jobid), "-o", "%i|%T|%M|%l|%D|%C"]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    return select_squeue_line(result.stdout, jobid)
+    return select_squeue_line(run_slurm(cmd), jobid)
 
 
 def run_sstat(jobid):
     """Run sstat for one job and return its raw pipe-delimited output line,
     or None if no stats are available yet (e.g. job just started)."""
     cmd = ["sstat", "-j", str(jobid), "--format=JobID,AveCPU,MaxRSS,AveRSS", "-P", "-n"]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    line = result.stdout.strip().split("\n")[0] if result.stdout.strip() else None
-    return line
+    stripped = run_slurm(cmd).strip()
+    return stripped.split("\n")[0] if stripped else None
 
 
 # --- Parsing (pure functions, testable with fixture text) -----------------
