@@ -212,10 +212,44 @@ def test_assess_health_long_running_with_zero_files_ever_flagged():
 
 
 def test_assess_health_just_started_with_zero_files_not_alarming():
-    # Same zero-files situation, but the job just started — this should
+    # Same zero-files situation, but the job just started - this should
     # read as "too early to tell," not "stuck."
     squeue_info = {"jobid": "1", "state": "RUNNING", "time_used": "0:10", "time_limit": "1-00:00:00", "nodes": 1, "cpus": 8}
     activity_info = {"exists": True, "stale": True, "minutes_since_change": None, "most_recent_file": None, "file_count": 0}
     verdict = assess_job_health(squeue_info, activity_info)
     assert "hasn't written anything" in verdict.lower()
     assert "not concerning yet" in verdict.lower()
+
+
+# --- HPC-3: busy determination must use sstat AveCPU, not wall time --------
+
+def test_assess_health_busy_driven_by_avecpu_not_walltime():
+    # Short wall time (30s, below threshold) but high real CPU -> AveCPU says
+    # busy, so a stale output dir is flagged as busy-but-silent. Under the old
+    # wall-time-only logic this would NOT have been flagged.
+    squeue_info = {"jobid": "1", "state": "RUNNING", "time_used": "00:30", "time_limit": "1-00:00:00", "nodes": 1, "cpus": 8}
+    sstat_info = {"jobid": "1", "ave_cpu": "05:00:00", "max_rss": "1G", "ave_rss": "800M"}
+    activity_info = {"exists": True, "stale": True, "minutes_since_change": 120, "most_recent_file": "/data/out.log"}
+    verdict = assess_job_health(squeue_info, activity_info, sstat_info)
+    assert "busy-but-silent" in verdict or "stuck" in verdict.lower()
+
+
+def test_assess_health_low_avecpu_long_wall_flagged_blocked():
+    # Long wall time but ~zero real CPU + no output -> blocked/deadlocked, NOT
+    # "busy". This is the distinction wall time alone could not make.
+    squeue_info = {"jobid": "1", "state": "RUNNING", "time_used": "02:00:00", "time_limit": "1-00:00:00", "nodes": 1, "cpus": 8}
+    sstat_info = {"jobid": "1", "ave_cpu": "00:00:03", "max_rss": "10M", "ave_rss": "8M"}
+    activity_info = {"exists": True, "file_count": 0, "stale": True, "minutes_since_change": None, "most_recent_file": None}
+    verdict = assess_job_health(squeue_info, activity_info, sstat_info)
+    assert "blocked" in verdict.lower() or "almost no cpu" in verdict.lower()
+    assert "busy-but-silent" not in verdict
+
+
+def test_assess_health_early_startup_with_low_avecpu_not_blocked():
+    # Just started (short wall) and little CPU -> too early to call blocked.
+    squeue_info = {"jobid": "1", "state": "RUNNING", "time_used": "00:20", "time_limit": "1-00:00:00", "nodes": 1, "cpus": 8}
+    sstat_info = {"jobid": "1", "ave_cpu": "00:00:02", "max_rss": "10M", "ave_rss": "8M"}
+    activity_info = {"exists": True, "file_count": 0, "stale": True, "minutes_since_change": None, "most_recent_file": None}
+    verdict = assess_job_health(squeue_info, activity_info, sstat_info)
+    assert "not concerning yet" in verdict.lower()
+    assert "blocked" not in verdict.lower()

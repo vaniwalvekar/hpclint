@@ -172,7 +172,7 @@ def _parse_cpu_time_to_seconds(time_str):
     return days * 86400 + hours * 3600 + minutes * 60 + seconds
 
 
-def assess_job_health(squeue_info, activity_info, high_cpu_time_threshold_seconds=60):
+def assess_job_health(squeue_info, activity_info, sstat_info=None, high_cpu_time_threshold_seconds=60):
     """Combine job state, CPU time accrued, and output-directory activity
     into a plain-language verdict.
 
@@ -189,8 +189,19 @@ def assess_job_health(squeue_info, activity_info, high_cpu_time_threshold_second
     if state != "RUNNING":
         return f"Job is in state '{state}' — not yet running, nothing to assess."
 
-    cpu_time_seconds = _parse_cpu_time_to_seconds(squeue_info.get("time_used"))
-    has_accrued_cpu_time = cpu_time_seconds is not None and cpu_time_seconds >= high_cpu_time_threshold_seconds
+    wall_seconds = _parse_cpu_time_to_seconds(squeue_info.get("time_used"))
+    ave_cpu_seconds = (
+        _parse_cpu_time_to_seconds(sstat_info.get("ave_cpu"))
+        if sstat_info and sstat_info.get("ave_cpu") else None
+    )
+    if ave_cpu_seconds is not None:
+        # Real CPU usage is the trustworthy "is it actually working" signal.
+        has_accrued_cpu_time = ave_cpu_seconds >= high_cpu_time_threshold_seconds
+        cpu_known = True
+    else:
+        # No CPU stats yet (e.g. job just started) - fall back to elapsed time.
+        has_accrued_cpu_time = wall_seconds is not None and wall_seconds >= high_cpu_time_threshold_seconds
+        cpu_known = False
 
     if not activity_info.get("exists"):
         return (
@@ -200,6 +211,15 @@ def assess_job_health(squeue_info, activity_info, high_cpu_time_threshold_second
 
     if activity_info.get("file_count") == 0:
         elapsed = squeue_info.get("time_used", "an unknown amount of time")
+        if (cpu_known and not has_accrued_cpu_time
+                and wall_seconds is not None
+                and wall_seconds >= high_cpu_time_threshold_seconds):
+            return (
+                f"Job has been running {elapsed} but its average CPU time is only "
+                f"{sstat_info.get('ave_cpu')} - it is using almost no CPU and has written "
+                f"nothing. This looks blocked or deadlocked (waiting on I/O, a lock, or a "
+                f"resource) rather than making progress."
+            )
         if has_accrued_cpu_time:
             return (
                 f"Job is RUNNING and has been going for {elapsed}, but has never written a single "
