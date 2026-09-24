@@ -115,3 +115,27 @@ def diagnose(sacct_info):
                          f"check the job's stderr/output log.")
 
     return "\n".join(lines)
+
+
+# States that are not a fault of the job itself.
+_BENIGN_STATES = {"COMPLETED", "CANCELLED", "PREEMPTED"}
+
+
+def diagnose_exit_code(sacct_info):
+    """Process exit code for a diagnosis, mirroring diagnose():
+
+        0 = benign outcome (completed, cancelled, preempted, still queued/running)
+        1 = a failure/problem (FAILED, TIMEOUT, OUT_OF_MEMORY, NODE_FAIL, ...) or unknown
+        2 = cannot determine (no accounting record found)
+
+    A non-zero exit code bumps an otherwise-benign state up to 1.
+    """
+    if sacct_info is None:
+        return 2
+    raw_state = sacct_info.get("state", "") or ""
+    state = raw_state.split()[0] if raw_state else ""
+    exit_code = sacct_info.get("exit_code")
+
+    if state in _BENIGN_STATES or state in _TRANSIENT_STATES:
+        return 1 if (exit_code and exit_code != "0") else 0
+    return 1
