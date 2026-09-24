@@ -29,6 +29,13 @@ _STATE_EXPLANATIONS = {
                  "partitions). Usually safe to resubmit.",
 }
 
+# States meaning the job is queued or still in flight, not a finished result.
+# A sacct record stuck in one of these while squeue no longer lists the job is
+# the classic "ghost record" case (e.g. a job killed before it really started).
+_TRANSIENT_STATES = {
+    "PENDING", "RUNNING", "CONFIGURING", "COMPLETING", "SUSPENDED", "REQUEUE_HOLD",
+}
+
 # Common exit codes and their typical meaning. Exit code alone is ambiguous
 # (128+signal is a common convention but not guaranteed), so this is treated
 # as a hint, not a certainty.
@@ -81,16 +88,25 @@ def diagnose(sacct_info):
     if sacct_info is None:
         return "No accounting record found for this job ID — check the ID, or it may not have run yet."
 
-    state = sacct_info.get("state", "")
+    raw_state = sacct_info.get("state", "")
+    # sacct reports cancellations as 'CANCELLED by 1042' - normalise to the
+    # bare state for lookup, but keep the raw string for display.
+    state = raw_state.split()[0] if raw_state else ""
     exit_code = sacct_info.get("exit_code")
 
     lines = []
 
     state_explanation = _STATE_EXPLANATIONS.get(state)
     if state_explanation:
-        lines.append(f"State: {state} — {state_explanation}")
+        lines.append(f"State: {raw_state} — {state_explanation}")
+    elif state in _TRANSIENT_STATES:
+        lines.append(
+            f"State: {raw_state} — the job hasn't failed; it is still {state.lower()} in the "
+            f"accounting log. If `hpclint watch` cannot find this job in squeue, that is usually "
+            f"a stale 'ghost' record - trust squeue for the live state."
+        )
     else:
-        lines.append(f"State: {state} (no specific explanation on file for this state)")
+        lines.append(f"State: {raw_state} (no specific explanation on file for this state)")
 
     if exit_code and exit_code != "0":
         exit_hint = _EXIT_CODE_HINTS.get(exit_code)

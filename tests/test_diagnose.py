@@ -80,3 +80,30 @@ def test_diagnose_unknown_state_still_returns_something_useful():
     info = {"jobid": "1", "state": "SOME_NEW_STATE", "exit_code": "0"}
     result = diagnose(info)
     assert "SOME_NEW_STATE" in result
+
+
+# --- HPC-4: cancelled-by-uid normalisation + transient/ghost states ---------
+
+def test_diagnose_parse_handles_cancelled_with_uid():
+    # sacct -P keeps 'CANCELLED by 1042' in the State field.
+    info = parse_sacct_line("12345|CANCELLED by 1042|0:0")
+    assert info["state"] == "CANCELLED by 1042"
+
+def test_diagnose_cancelled_by_uid_explained():
+    info = {"jobid": "12345", "state": "CANCELLED by 1042", "exit_code": "0"}
+    result = diagnose(info)
+    assert "cancel" in result.lower()
+    assert "no specific explanation" not in result
+
+def test_diagnose_pending_is_transient_not_failure():
+    info = {"jobid": "12345", "state": "PENDING", "exit_code": "0"}
+    result = diagnose(info)
+    assert "hasn't failed" in result
+    assert "ghost" in result.lower()
+    assert "no specific explanation" not in result
+
+def test_diagnose_running_is_transient():
+    info = {"jobid": "12345", "state": "RUNNING", "exit_code": "0:0"}
+    result = diagnose(info)
+    assert "running" in result.lower()
+    assert "no specific explanation" not in result
