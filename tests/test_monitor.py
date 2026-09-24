@@ -91,6 +91,23 @@ def test_parse_squeue_line_running_job():
     }
 
 
+# --- HPC-7: padded/odd field robustness ------------------------------------
+
+def test_parse_squeue_line_strips_padded_fields():
+    line = " 12345 | RUNNING | 01:23:45 | 1-00:00:00 | 2 | 16 "
+    info = parse_squeue_line(line)
+    assert info["state"] == "RUNNING"
+    assert info["nodes"] == 2
+    assert info["cpus"] == 16
+
+def test_parse_squeue_line_nonnumeric_counts_do_not_crash():
+    # Some builds render %C as 'allocated/idle/other/available'.
+    line = "12345|RUNNING|01:23:45|1-00:00:00|1|16/0/0/0"
+    info = parse_squeue_line(line)
+    assert info["cpus"] == 0
+    assert info["state"] == "RUNNING"
+
+
 def test_parse_squeue_line_pending_job():
     line = "99999|PENDING|0:00|02:00:00|1|4"
     info = parse_squeue_line(line)
