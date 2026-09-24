@@ -84,7 +84,7 @@ def _run_watch(args):
               f"({activity_info['most_recent_file']})")
 
     print()
-    print(assess_job_health(squeue_info, activity_info))
+    print(assess_job_health(squeue_info, activity_info, sstat_info))
 
 
 def _run_diagnose(args):
