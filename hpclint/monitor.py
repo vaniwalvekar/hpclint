@@ -18,13 +18,33 @@ import time
 
 # --- Subprocess wrappers (need a real Slurm cluster to actually run) ------
 
+def select_squeue_line(text, jobid):
+    """Pick the single relevant line from multi-line squeue output.
+
+    `squeue -j <id>` can emit more than one line: one per array task
+    (12345_0, 12345_1, ...) or per job step (.batch/.extern). We want the
+    main job, so prefer the line whose JobID exactly equals the requested
+    id; otherwise fall back to the first non-empty line. Returns None when
+    there is no output (job not in queue).
+    """
+    if not text:
+        return None
+    lines = [l for l in text.strip().splitlines() if l.strip()]
+    if not lines:
+        return None
+    wanted = str(jobid)
+    for line in lines:
+        if line.split("|")[0].strip() == wanted:
+            return line
+    return lines[0]
+
+
 def run_squeue(jobid):
     """Run squeue for one job and return its raw pipe-delimited output line,
     or None if the job isn't found (e.g. already finished)."""
     cmd = ["squeue", "-h", "-j", str(jobid), "-o", "%i|%T|%M|%l|%D|%C"]
     result = subprocess.run(cmd, capture_output=True, text=True)
-    line = result.stdout.strip()
-    return line if line else None
+    return select_squeue_line(result.stdout, jobid)
 
 
 def run_sstat(jobid):
