@@ -16,7 +16,37 @@ from hpclint.monitor import (
     parse_sstat_line,
     check_output_activity,
     assess_job_health,
+    _parse_cpu_time_to_seconds,
 )
+
+# --- CPU/elapsed time parsing (HPC-1: D-HH:MM:SS crash) --------------------
+
+def test_parse_time_hhmmss():
+    assert _parse_cpu_time_to_seconds("01:23:45") == 5025
+
+def test_parse_time_mmss():
+    assert _parse_cpu_time_to_seconds("23:45") == 1425
+
+def test_parse_time_seconds_only():
+    assert _parse_cpu_time_to_seconds("45") == 45
+
+def test_parse_time_with_days_no_crash():
+    # '2-03:04:05' == 2 days, 3h, 4m, 5s  -> the crash case from HPC-1
+    assert _parse_cpu_time_to_seconds("2-03:04:05") == 2 * 86400 + 3 * 3600 + 4 * 60 + 5
+
+def test_parse_time_days_only():
+    assert _parse_cpu_time_to_seconds("5-00:00:00") == 5 * 86400
+
+def test_parse_time_garbage_returns_none():
+    assert _parse_cpu_time_to_seconds("N/A") is None
+    assert _parse_cpu_time_to_seconds("bogus") is None
+
+def test_assess_health_long_job_does_not_crash():
+    info = {"jobid": "9", "state": "RUNNING", "time_used": "2-03:04:05",
+            "nodes": "1", "cpus": "8"}
+    activity = {"exists": True, "file_count": 0, "stale": False, "minutes_since_change": None}
+    verdict = assess_job_health(info, activity)
+    assert isinstance(verdict, str) and "RUNNING" in verdict
 
 
 # --- squeue parsing ---------------------------------------------------------
